@@ -1,0 +1,68 @@
+#!/bin/bash
+set -eu
+
+fail() { printf 'Game launcher: %s\n' "$*" >&2; exit 1; }
+
+app=$(cd -- "$(dirname -- "$0")" && pwd -P)
+[ "$(uname -m)" = x86_64 ] || fail 'An x86-64 system is required.'
+[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] || fail 'No desktop display is available.'
+[ -d /dev/dri ] || [ -e /dev/nvidia0 ] || fail 'No GPU device was found.'
+[ "$(stat -f -c %T /dev/shm)" = tmpfs ] || fail '/dev/shm must be a tmpfs filesystem.'
+free=$(df -Pk /dev/shm | awk 'NR==2 {print $4}')
+[ "$free" -ge 2097152 ] || fail 'At least 2 GiB of free tmpfs space is required in /dev/shm.'
+
+bwrap="$app/assets/bwrap"
+"$bwrap" --ro-bind / / --unshare-user --unshare-pid --proc /proc -- /bin/true 2>/dev/null \
+    || fail 'User and PID namespaces are unavailable; enable unprivileged user namespaces.'
+
+work=$(mktemp -d /dev/shm/game-packer.XXXXXXXX) || fail 'Cannot create temporary workspace.'
+session=/var/tmp
+cleanup() { rm -rf -- "$work"; }
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir -p "$work/home" "$work/cache" "$work/data/umu" "$work/tmp" "$work/prefix"
+for item in "$app"/assets/steam/SteamLinuxRuntime_sniper/*; do
+    name=$(basename "$item")
+    case "$name" in
+        umu|run|run-in-*|sniper_platform_*)
+            # Both runtime copies must be on tmpfs for hard links to work.
+            cp -a "$item" "$work/data/umu/$name"
+            ;;
+        var) ;;
+        *) ln -s "/opt/assets/steam/SteamLinuxRuntime_sniper/$name" "$work/data/umu/$name" ;;
+    esac
+done
+mkdir "$work/data/umu/var"
+
+if [ -n "${XAUTHORITY:-}" ] && [ -r "$XAUTHORITY" ]; then
+    cp "$XAUTHORITY" "$work/Xauthority"
+    export XAUTHORITY="$session/Xauthority"
+elif [ -r "$HOME/.Xauthority" ]; then
+    cp "$HOME/.Xauthority" "$work/Xauthority"
+    export XAUTHORITY="$session/Xauthority"
+fi
+
+export HOME="$session/home"
+export XDG_CACHE_HOME="$session/cache"
+export XDG_DATA_HOME="$session/data"
+export TMPDIR="$session/tmp"
+export WINEPREFIX="$session/prefix"
+export PROTONPATH=/opt/assets/proton/GE-Proton9-27
+export UMU_RUNTIME_UPDATE=0 GAMEID=umu-default
+export PRESSURE_VESSEL_VARIABLE_DIR="$session/data/umu/var"
+
+exe=$(cat "$app/executable")
+game_dir="/opt/game/$(dirname -- "$exe")"
+devices=()
+for device in /dev/dri /dev/nvidia[0-9]* /dev/nvidiactl /dev/nvidia-uvm /dev/nvidia-uvm-tools /dev/snd; do
+    [ ! -e "$device" ] || devices+=(--dev-bind "$device" "$device")
+done
+
+"$bwrap" --die-with-parent --new-session --unshare-user --unshare-pid \
+    --ro-bind / / --ro-bind "$app" /opt --proc /proc --dev /dev \
+    --dir /dev/shm --bind "$work" "$session" --bind "$work/tmp" /tmp \
+    --ro-bind-try /tmp/.X11-unix /tmp/.X11-unix "${devices[@]}" \
+    --chdir "$game_dir" -- python3 /opt/assets/launcher/umu/umu_run.py \
+    "/opt/game/$exe" "$@"

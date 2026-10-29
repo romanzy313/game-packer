@@ -1,0 +1,5 @@
+game-data
+*.AppImage
+__pycache__/
+
+downloads/
