@@ -15,7 +15,7 @@ def main():
 
     username = pwd.getpwuid(os.getuid()).pw_name
     if not username or any(ord(c) < 32 or ord(c) > 126 or c in '"\\;' for c in username):
-        raise ValueError('Linux username cannot be safely represented in config.cfg')
+        username = 'player'
     name = username.encode('ascii')
     config = game / 'cstrike' / 'config.cfg'
     data = config.read_bytes()
