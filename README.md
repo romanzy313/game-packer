@@ -26,3 +26,11 @@ GAME_PACKER_DATA_DIR="$HOME/.local/share/game-packer/cs16" ./cs16.AppImage
 Remove that directory to reset the game. Files in `/tmp` may be removed by the
 system; caches and temporary files are discarded after each session. The target
 requires FUSE and `fusermount3` for the writable overlay.
+
+For debug output:
+
+```sh
+UMU_LOG=1 STEAM_LINUX_RUNTIME_VERBOSE=1 WINEDEBUG=+seh ./cs16.AppImage
+```
+
+`UMU_LOG=1` prints environment variables, which may contain secrets.
