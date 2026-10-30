@@ -22,6 +22,8 @@ python3 build.py game-data/SuperTuxKart \
 python3 build.py game-data/cs16 cs.exe --pre-launch configs/cs16.py --output cs16.AppImage
 ```
 
+Alternatively, run `./build-cs16.sh`.
+
 ## Configuring
 
 The optional `--pre-launch` script runs with Python 3 before the game starts. It
