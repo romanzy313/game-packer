@@ -31,6 +31,8 @@ esac
 [ ! -L "$state/.lock" ] || fail "Game state lock is a symlink: $state/.lock"
 exec 9>>"$state/.lock"
 flock -n 9 || fail "Game state directory is already in use: $state"
+printf 'Game launcher: Game state: %s\n' "$state"
+printf 'Game launcher: Writable game files: %s/upper\n' "$state"
 
 for directory in upper home prefix; do
     [ ! -L "$state/$directory" ] || fail "Game state path is a symlink: $state/$directory"
