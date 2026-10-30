@@ -146,8 +146,9 @@ def main():
             '<rect width="64" height="64" fill="#222"/>'
             '<text x="8" y="48" font-size="45" fill="white">G</text></svg>')
         squash = tmp / 'image.squashfs'
+        # Host extended attributes can crash the AppImage FUSE runtime.
         subprocess.run(['mksquashfs', str(app), str(squash), '-noappend',
-                        '-comp', 'gzip', '-processors', '2'], check=True)
+                        '-comp', 'gzip', '-no-xattrs', '-processors', '2'], check=True)
         # Place the temporary output alongside its destination for atomic rename.
         temporary = None
         try:

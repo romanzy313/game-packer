@@ -11,3 +11,7 @@ python3 build.py game-data/SuperTuxKart \
   stk-code/build-x86_64/bin/supertuxkart.exe \
   --output SuperTuxKart.AppImage
 ```
+
+```sh
+python3 build.py game-data/cs16 cs.exe --output cs16.AppImage
+```
