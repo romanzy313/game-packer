@@ -2,6 +2,7 @@
 """Build an AppImage from a local Windows game and cached runtime assets."""
 import argparse
 import io
+import os
 import platform
 from pathlib import Path
 import shutil
@@ -92,12 +93,23 @@ def extract_bwrap(deb, destination):
     raise ValueError('bubblewrap executable missing from package')
 
 
+def make_game_readable(game):
+    # The overlay checks the image's stored ownership, which can differ from
+    # the target user. Preserve existing execute bits while granting access.
+    for directory, _, files in os.walk(game):
+        path = Path(directory)
+        path.chmod(path.stat().st_mode | 0o555)
+        for name in files:
+            path = Path(directory) / name
+            path.chmod(path.stat().st_mode | 0o444)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('game_directory', type=Path, help='directory containing the game')
     parser.add_argument('game_executable', help='executable path relative to the game directory')
     parser.add_argument('-o', '--output', type=Path, default=Path('Game-x86_64.AppImage'),
-                        help='output AppImage path (default: %(default)s)')
+                        help='output filename in ./out (default: %(default)s)')
     args = parser.parse_args()
     if platform.machine() != 'x86_64':
         raise ValueError('An x86-64 build machine is required')
@@ -110,13 +122,20 @@ def main():
             or not (game / executable).is_file()
             or not (game / executable).resolve().is_relative_to(game)):
         raise ValueError('game_executable must be a file inside game_directory')
-    output = args.output.absolute()
-    if not output.parent.is_dir():
-        raise ValueError('The output directory does not exist')
+    if args.output.name in ('', '.', '..'):
+        raise ValueError('Output must name a file')
+    output_dir = Path.cwd() / 'out'
+    if args.output.parent == Path('.'):
+        output = output_dir / args.output.name
+    elif args.output.parent.resolve() == output_dir.resolve():
+        output = args.output.absolute()
+    else:
+        raise ValueError('Output must be a filename or a path inside ./out')
     if output.parent.resolve().is_relative_to(game):
         raise ValueError('Output directory must be outside game_directory')
     if not shutil.which('mksquashfs'):
         raise ValueError('mksquashfs is required to build the AppImage')
+    output_dir.mkdir(exist_ok=True)
     DOWNLOADS.mkdir(exist_ok=True)
     with ThreadPoolExecutor(max_workers=5) as pool:
         list(pool.map(download, ASSETS.items()))
@@ -128,6 +147,7 @@ def main():
         assets.mkdir(parents=True)
         print('Preparing game and runtime assets', flush=True)
         shutil.copytree(game, app / 'game', symlinks=False)
+        make_game_readable(app / 'game')
         extract(DOWNLOADS / 'GE-Proton9-27.tar.gz', assets / 'proton')
         extract(DOWNLOADS / 'umu-launcher-1.2.5-zipapp.tar', assets / 'launcher')
         extract(DOWNLOADS / 'SteamLinuxRuntime_sniper-3.0.20261021.266025.tar.xz',
@@ -135,7 +155,14 @@ def main():
         steam = assets / 'steam' / 'SteamLinuxRuntime_sniper'
         (steam / '_v2-entry-point').rename(steam / 'umu')
         shim = steam / 'umu-shim'
-        shim.write_text('#!/bin/sh\nexec "$@"\n')
+        # Pressure vessel can expose only host drivers for one architecture.
+        # Keep those first, then fall back to the matching runtime drivers.
+        shim.write_text(
+            '#!/bin/sh\n'
+            'export LIBGL_DRIVERS_PATH="${LIBGL_DRIVERS_PATH:+$LIBGL_DRIVERS_PATH:}'
+            '/usr/lib/i386-linux-gnu/dri:/usr/lib/x86_64-linux-gnu/dri"\n'
+            'exec "$@"\n'
+        )
         shim.chmod(0o755)
         extract_bwrap(DOWNLOADS / 'bubblewrap_0.6.1-1ubuntu0.3_amd64.deb',
                       assets / 'bwrap')

@@ -1,6 +1,6 @@
 # Game packer
 
-Package a Windows game as an AppImage using Proton.
+Package a Windows game as an AppImage using Proton. Images are written to `./out/`.
 
 Download the
 [SuperTuxKart Windows ZIP](https://github.com/supertuxkart/stk-code/releases/download/1.5/SuperTuxKart-1.5-win.zip)
@@ -20,17 +20,15 @@ Game changes, saves, and settings are kept in `/tmp/<AppImage filename>` by
 default. To keep them in another directory across launches:
 
 ```sh
-GAME_PACKER_DATA_DIR="$HOME/.local/share/game-packer/cs16" ./cs16.AppImage
+GAME_PACKER_DATA_DIR="$HOME/.local/share/game-packer/cs16" ./out/cs16.AppImage
 ```
 
 Remove that directory to reset the game. Files in `/tmp` may be removed by the
 system; caches and temporary files are discarded after each session. The target
 requires FUSE and `fusermount3` for the writable overlay.
 
-For debug output:
+For concise error output:
 
 ```sh
-UMU_LOG=1 STEAM_LINUX_RUNTIME_VERBOSE=1 WINEDEBUG=+seh ./cs16.AppImage
+WINEDEBUG=-all,err+all ./out/cs16.AppImage
 ```
-
-`UMU_LOG=1` prints environment variables, which may contain secrets.

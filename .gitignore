@@ -3,3 +3,4 @@ game-data
 __pycache__/
 
 downloads/
+out/
