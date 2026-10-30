@@ -31,6 +31,10 @@ ASSETS = {
         'https://github.com/AppImage/type2-runtime/releases/download/'
         'continuous/runtime-x86_64'
     ),
+    'fuse-overlayfs-v1.13-x86_64': (
+        'https://github.com/containers/fuse-overlayfs/releases/download/'
+        'v1.13/fuse-overlayfs-x86_64'
+    ),
     'bubblewrap_0.6.1-1ubuntu0.3_amd64.deb': (
         'https://archive.ubuntu.com/ubuntu/pool/main/b/bubblewrap/'
         'bubblewrap_0.6.1-1ubuntu0.3_amd64.deb'
@@ -135,6 +139,9 @@ def main():
         shim.chmod(0o755)
         extract_bwrap(DOWNLOADS / 'bubblewrap_0.6.1-1ubuntu0.3_amd64.deb',
                       assets / 'bwrap')
+        shutil.copy(DOWNLOADS / 'fuse-overlayfs-v1.13-x86_64',
+                    assets / 'fuse-overlayfs')
+        (assets / 'fuse-overlayfs').chmod(0o755)
         shutil.copy(ROOT / 'AppRun', app / 'AppRun')
         (app / 'AppRun').chmod(0o755)
         (app / 'executable').write_text(executable.as_posix())

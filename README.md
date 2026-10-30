@@ -15,3 +15,14 @@ python3 build.py game-data/SuperTuxKart \
 ```sh
 python3 build.py game-data/cs16 cs.exe --output cs16.AppImage
 ```
+
+Game changes, saves, and settings are kept in `/tmp/<AppImage filename>` by
+default. To keep them in another directory across launches:
+
+```sh
+GAME_PACKER_DATA_DIR="$HOME/.local/share/game-packer/cs16" ./cs16.AppImage
+```
+
+Remove that directory to reset the game. Files in `/tmp` may be removed by the
+system; caches and temporary files are discarded after each session. The target
+requires FUSE and `fusermount3` for the writable overlay.

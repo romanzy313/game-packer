@@ -15,14 +15,96 @@ bwrap="$app/assets/bwrap"
 "$bwrap" --ro-bind / / --unshare-user --unshare-pid --proc /proc -- /bin/true 2>/dev/null \
     || fail 'User and PID namespaces are unavailable; enable unprivileged user namespaces.'
 
+[ -n "${APPIMAGE:-}" ] || fail 'The AppImage path is unavailable.'
+command -v flock >/dev/null || fail 'flock is required for the game state lock.'
+command -v fusermount3 >/dev/null || fail 'fusermount3 is required for the game overlay.'
+command -v mountpoint >/dev/null || fail 'mountpoint is required for the game overlay.'
+
+state=${GAME_PACKER_DATA_DIR:-"/tmp/$(basename -- "$APPIMAGE")"}
+mkdir -p -- "$state" || fail "Cannot create game state directory: $state"
+state=$(cd -- "$state" && pwd -P) || fail 'Cannot access game state directory.'
+case "$state$app" in
+    *:*) fail 'Paths containing a colon are not supported by the game overlay.' ;;
+esac
+[ ! -L "$state/.lock" ] || fail "Game state lock is a symlink: $state/.lock"
+exec 9>>"$state/.lock"
+flock -n 9 || fail "Game state directory is already in use: $state"
+
+for directory in upper home prefix; do
+    [ ! -L "$state/$directory" ] || fail "Game state path is a symlink: $state/$directory"
+    mkdir -p -- "$state/$directory" || fail "Cannot create $state/$directory"
+done
+
 work=$(mktemp -d /dev/shm/game-packer.XXXXXXXX) || fail 'Cannot create temporary workspace.'
+overlay_work=
+overlay_pid=
+game_pid=
 session=/var/tmp
-cleanup() { rm -rf -- "$work"; }
+cleanup() {
+    status=$?
+    trap - EXIT INT TERM
+    set +e
+    if [ -n "$game_pid" ] && kill -0 "$game_pid" 2>/dev/null; then
+        kill "$game_pid" 2>/dev/null
+        wait "$game_pid" 2>/dev/null
+    fi
+    if mountpoint -q "$work/merged"; then
+        fusermount3 -u "$work/merged" || status=1
+    fi
+    if [ -n "$overlay_pid" ]; then
+        kill "$overlay_pid" 2>/dev/null
+        wait "$overlay_pid" 2>/dev/null
+    fi
+    if mountpoint -q "$work/merged"; then
+        printf 'Game launcher: overlay remains mounted at %s; workspace retained.\n' "$work" >&2
+        status=1
+    else
+        [ -z "$overlay_work" ] || rm -rf -- "$overlay_work"
+        rm -rf -- "$work"
+    fi
+    exit "$status"
+}
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-mkdir -p "$work/home" "$work/cache" "$work/data/umu" "$work/tmp" "$work/prefix"
+overlay_work=$(mktemp -d "$state/.overlay-work.XXXXXXXX") || fail 'Cannot create overlay work directory.'
+mkdir -p "$work/home" "$work/cache" "$work/data/umu" "$work/tmp" "$work/prefix" "$work/merged"
+# libfuse treats commas and backslashes as option separators or escapes.
+escape_overlay_path() {
+    local path=$1
+    path=${path//\\/\\\\}
+    path=${path//,/\\,}
+    printf '%s' "$path"
+}
+lower=$(escape_overlay_path "$app/game")
+upper=$(escape_overlay_path "$state/upper")
+upper_work=$(escape_overlay_path "$overlay_work")
+python3 -c '
+import ctypes, os, signal, sys
+parent = int(sys.argv[1])
+if ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM, 0, 0, 0) != 0:
+    raise OSError(ctypes.get_errno(), "Cannot set overlay parent-death signal")
+if os.getppid() != parent:
+    sys.exit("Launcher exited before the overlay started")
+os.execv(sys.argv[2], sys.argv[2:])
+' "$$" "$app/assets/fuse-overlayfs" -f \
+    -o "auto_unmount,lowerdir=$lower,upperdir=$upper,workdir=$upper_work" \
+    "$work/merged" 9>&- >"$work/overlay.log" 2>&1 &
+overlay_pid=$!
+for attempt in {1..100}; do
+    mountpoint -q "$work/merged" && break
+    if ! kill -0 "$overlay_pid" 2>/dev/null; then
+        cat "$work/overlay.log" >&2
+        fail 'Unable to mount the writable game overlay.'
+    fi
+    sleep 0.1
+done
+if ! mountpoint -q "$work/merged"; then
+    cat "$work/overlay.log" >&2
+    fail 'Timed out mounting the writable game overlay.'
+fi
+
 for item in "$app"/assets/steam/SteamLinuxRuntime_sniper/*; do
     name=$(basename "$item")
     case "$name" in
@@ -45,6 +127,8 @@ elif [ -r "$HOME/.Xauthority" ]; then
 fi
 
 export HOME="$session/home"
+export XDG_CONFIG_HOME="$session/home/.config"
+export XDG_STATE_HOME="$session/home/.local/state"
 export XDG_CACHE_HOME="$session/cache"
 export XDG_DATA_HOME="$session/data"
 export TMPDIR="$session/tmp"
@@ -63,6 +147,11 @@ done
 "$bwrap" --die-with-parent --new-session --unshare-user --unshare-pid \
     --ro-bind / / --ro-bind "$app" /opt --proc /proc --dev /dev \
     --dir /dev/shm --bind "$work" "$session" --bind "$work/tmp" /tmp \
+    --bind "$work/merged" /opt/game --bind "$state/home" "$session/home" \
+    --bind "$state/prefix" "$session/prefix" \
     --ro-bind-try /tmp/.X11-unix /tmp/.X11-unix "${devices[@]}" \
     --chdir "$game_dir" -- python3 /opt/assets/launcher/umu/umu_run.py \
-    "/opt/game/$exe" "$@"
+    "/opt/game/$exe" "$@" 9>&- &
+game_pid=$!
+wait "$game_pid"
+game_pid=
