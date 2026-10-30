@@ -110,7 +110,10 @@ def main():
     parser.add_argument('game_executable', help='executable path relative to the game directory')
     parser.add_argument('-o', '--output', type=Path, default=Path('Game-x86_64.AppImage'),
                         help='output filename in ./out (default: %(default)s)')
+    parser.add_argument('--pre-launch', type=Path, help='Python script to run before starting the game')
     args = parser.parse_args()
+    if args.pre_launch is not None and not args.pre_launch.is_file():
+        raise ValueError('pre-launch script must be a file')
     if platform.machine() != 'x86_64':
         raise ValueError('An x86-64 build machine is required')
     game = args.game_directory.resolve(strict=True)
@@ -170,6 +173,8 @@ def main():
                     assets / 'fuse-overlayfs')
         (assets / 'fuse-overlayfs').chmod(0o755)
         shutil.copy(ROOT / 'AppRun', app / 'AppRun')
+        if args.pre_launch is not None:
+            shutil.copyfile(args.pre_launch, app / 'pre-launch.py')
         (app / 'AppRun').chmod(0o755)
         (app / 'executable').write_text(executable.as_posix())
         (app / 'game.desktop').write_text(

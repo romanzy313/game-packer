@@ -20,7 +20,9 @@ command -v flock >/dev/null || fail 'flock is required for the game state lock.'
 command -v fusermount3 >/dev/null || fail 'fusermount3 is required for the game overlay.'
 command -v mountpoint >/dev/null || fail 'mountpoint is required for the game overlay.'
 
-state=${GAME_PACKER_DATA_DIR:-"/tmp/$(basename -- "$APPIMAGE")"}
+image_name=$(basename -- "$APPIMAGE")
+image_name=${image_name%.AppImage}
+state=${GAME_PACKER_DATA_DIR:-"$HOME/.local/share/fun/$image_name"}
 mkdir -p -- "$state" || fail "Cannot create game state directory: $state"
 state=$(cd -- "$state" && pwd -P) || fail 'Cannot access game state directory.'
 case "$state$app" in
@@ -103,6 +105,10 @@ done
 if ! mountpoint -q "$work/merged"; then
     cat "$work/overlay.log" >&2
     fail 'Timed out mounting the writable game overlay.'
+fi
+
+if [ -f "$app/pre-launch.py" ]; then
+    python3 "$app/pre-launch.py" "$work/merged" "$state" || fail 'Pre-launch hook failed.'
 fi
 
 for item in "$app"/assets/steam/SteamLinuxRuntime_sniper/*; do

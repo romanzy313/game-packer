@@ -1,6 +1,10 @@
 # Game packer
 
-Package a Windows game as an AppImage using Proton. Images are written to `./out/`.
+Package a Windows game as an AppImage using Proton.
+
+## Examples
+
+### TuxKart
 
 Download the
 [SuperTuxKart Windows ZIP](https://github.com/supertuxkart/stk-code/releases/download/1.5/SuperTuxKart-1.5-win.zip)
@@ -12,20 +16,25 @@ python3 build.py game-data/SuperTuxKart \
   --output SuperTuxKart.AppImage
 ```
 
-```sh
-python3 build.py game-data/cs16 cs.exe --output cs16.AppImage
-```
-
-Game changes, saves, and settings are kept in `/tmp/<AppImage filename>` by
-default. To keep them in another directory across launches:
+### cs 1.6
 
 ```sh
-GAME_PACKER_DATA_DIR="$HOME/.local/share/game-packer/cs16" ./out/cs16.AppImage
+python3 build.py game-data/cs16 cs.exe --pre-launch configs/cs16.py --output cs16.AppImage
 ```
 
-Remove that directory to reset the game. Files in `/tmp` may be removed by the
-system; caches and temporary files are discarded after each session. The target
-requires FUSE and `fusermount3` for the writable overlay.
+## Configuring
+
+The optional `--pre-launch` script runs with Python 3 before the game starts. It
+receives the writable game directory and the persistent state directory as its
+first and second arguments. A nonzero exit status stops the launch.
+
+Game changes, saves, and settings are kept in
+`~/.local/share/fun/<AppImage name>/` by default, without the `.AppImage`
+suffix. To use a randomly named temporary directory:
+
+```sh
+GAME_PACKER_DATA_DIR="$(mktemp -d)" ./out/cs16.AppImage
+```
 
 For concise error output:
 
